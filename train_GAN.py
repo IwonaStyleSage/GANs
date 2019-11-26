@@ -7,6 +7,8 @@ session = tf.compat.v1.Session(config=config)
 import glob
 import imageio
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import os
 import PIL
@@ -103,3 +105,109 @@ generator = generator_model()
 noise = tf.random.normal([1, 100])
 
 generated_img = generator(noise, training=False)
+
+def discriminator_model(in_shape=(28,28,3)):
+    model = tf.keras.Sequential()
+    model.add(layers.Conv2D(64, (5,5), strides=(2,2), padding='same', input_shape=in_shape))
+
+    model.add(layers.LeakyReLU())
+    model.add(layers.Dropout(0.3))
+
+    model.add(layers.Conv2D(128,(5,5), strides=(2,2), padding='same'))
+    model.add(layers.LeakyReLU())
+    model.add(layers.Dropout(0.3))
+
+    model.add(layers.Flatten())
+    model.add(layers.Dense(1))
+
+    return model
+
+discriminator = discriminator_model()
+
+cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+
+def discriminator_loss(true_output, fake_output):
+    true_loss = cross_entropy(tf.ones_like(true_output), true_output)
+    fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+    tot_loss = true_loss + fake_loss
+    return tot_loss
+
+def generator_loss(fake_output):
+    return cross_entropy(tf.ones_like(fake_output), fake_output)
+
+gen_optimizer = tf.keras.optimizers.Adam(1e-4)
+dis_optimizer = tf.keras.optimizers.Adam(1e-4)
+
+checkpoints_dir = './training_chpk'
+checkpoint_prefix = os.path.join(checkpoints_dir, "ckpt")
+checkpoint = tf.train.Checkpoint(generator_optimizer=gen_optimizer,
+                                 discriminator_optimizer=dis_optimizer,
+                                 generator=generator,
+                                 discriminator=discriminator)
+
+EPOCHS = 300
+
+noise_dim = 100
+num_ex_to_gen = 16
+
+seed = tf.random.normal([num_ex_to_gen,noise_dim])
+
+@tf.function
+def train_step(images):
+    noise = tf.random.normal([BATCH_SIZE, noise_dim])
+
+    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+        generated_img = generator(noise, training=True)
+
+        true_output = discriminator(images, training=True)
+        fake_output = discriminator(generated_img, training=True)
+
+        gen_loss = generator_loss(fake_output)
+        print(gen_loss)
+        disc_loss = discriminator_loss(true_output, fake_output)
+        print(disc_loss)
+
+    grad_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+    grad_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+    gen_optimizer.apply_gradients(zip(grad_generator, generator.trainable_variables))
+    dis_optimizer.apply_gradients(zip(grad_discriminator, discriminator.trainable_variables))
+
+
+def train(dataset, epochs):
+    for epoch in range(epochs):
+        start = time.time()
+        for idx, img_batch in enumerate(dataset):
+            train_step(img_batch)
+
+        #produce images for the GIF as we go
+        display.clear_output(wait=True)
+        generate_and_save_images(generator, epoch + 1, seed)
+
+        # Save the model every 12 EPOCHS
+        if (epoch + 1) % 12 == 0:
+            checkpoint.save(file_prefix = checkpoint_prefix)
+
+        print ('Time for epoch {} is {} sec'.format(epoch + 1, time.time()-start))
+
+        # Generator after final epoch
+        display.clear_output(wait=True)
+        generate_and_save_images(generator, epochs, seed)
+
+def generate_and_save_images(model, epoch, test_input):
+
+    # Training set to false so that every layer runs in inferenc mode
+    predictions = model(test_input, training=False)
+
+    fig = plt.figure(figsize=(4,4))
+
+    for i in range(predictions.shape[0]):
+        plt.subplot(4, 4, i+1)
+        plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5)
+        plt.axis('off')
+
+    plt.savefig('figures/image_at_epoch_{:04d}.png'.format(epoch))
+#    plt.show()
+    plt.close()
+
+
+train(train_ds.take(5000), EPOCHS)
