@@ -145,7 +145,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=gen_optimizer,
                                  generator=generator,
                                  discriminator=discriminator)
 
-EPOCHS = 300
+EPOCHS = 500
 
 noise_dim = 100
 num_ex_to_gen = 16
@@ -202,7 +202,7 @@ def generate_and_save_images(model, epoch, test_input):
 
     for i in range(predictions.shape[0]):
         plt.subplot(4, 4, i+1)
-        plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5)
+        plt.imshow(predictions[i, :, :, :] * 127.5 + 127.5)
         plt.axis('off')
 
     plt.savefig('figures/image_at_epoch_{:04d}.png'.format(epoch))
@@ -210,4 +210,4 @@ def generate_and_save_images(model, epoch, test_input):
     plt.close()
 
 
-train(train_ds.take(5000), EPOCHS)
+train(train_ds.take(50000), EPOCHS)
